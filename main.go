@@ -3,12 +3,15 @@ package main
 import (
 	"context"
 	"crypto/x509"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"log"
 	"net/http"
 	"os"
 	"time"
+
+	svc "example.com/openzitidemo/service"
 
 	"example.com/openzitidemo/common"
 	"github.com/openziti/edge-api/rest_management_api_client"
@@ -17,6 +20,8 @@ import (
 	"github.com/openziti/edge-api/rest_management_api_client/service_policy"
 	"github.com/openziti/edge-api/rest_model"
 	"github.com/openziti/edge-api/rest_util"
+	"github.com/openziti/sdk-golang/ziti"
+	"github.com/openziti/sdk-golang/ziti/enroll"
 )
 
 const (
@@ -57,16 +62,21 @@ func main() {
 	mux.Handle("/description", http.HandlerFunc(showToken))
 	mux.Handle("/download-token", http.HandlerFunc(downloadToken))
 
+	go bootstrapReflectServer()
+
 	svr.Handler = mux
 	port := 18000
 	ln := common.CreateUnderlayListener(port)
 	log.Printf("Starting insecure server on %d\n", port)
 	if err := svr.Serve(ln); err != nil {
 		log.Fatal(err)
+
 	}
 
+	// go bootstrapReflectServer()
+
 	hostingRouterName := erName
-	serviceName := "basic.web.smoke.test.service"
+	serviceName := "serviceName"
 	testerUsername := "gotester"
 
 	hostRouterIdent := getIdentityByName(client, hostingRouterName)
@@ -75,16 +85,112 @@ func main() {
 	// // Create a service that "links" the dial and bind configs
 	// createService(client, serviceName, []string{bindSvcConfig.ID, dialSvcConfig.ID})
 
-	bindSP := createServicePolicy(client, "basic.web.smoke.test.service.bind", rest_model.DialBindBind, rest_model.Roles{"@" + *hostRouterIdent.ID}, rest_model.Roles{"@" + *webTestService.ID})
+	bindSP := createServicePolicy(client, "serviceName.bind", rest_model.DialBindBind, rest_model.Roles{"@" + *hostRouterIdent.ID}, rest_model.Roles{"@" + *webTestService.ID})
 	defer func() { _ = deleteServicePolicyByID(client, bindSP.ID) }()
 	fmt.Println("bind service policy is:", bindSP)
 
 	testerIdent := getIdentityByName(client, testerUsername)
 
-	dialSP := createServicePolicy(client, "basic.web.smoke.test.service.dial", rest_model.DialBindDial, rest_model.Roles{"@" + *testerIdent.ID}, rest_model.Roles{"@" + *webTestService.ID})
+	dialSP := createServicePolicy(client, "serviceName.dial", rest_model.DialBindDial, rest_model.Roles{"@" + *testerIdent.ID}, rest_model.Roles{"@" + *webTestService.ID})
 	defer func() { _ = deleteServicePolicyByID(client, dialSP.ID) }()
 
 	fmt.Println("dial service policy is:", dialSP)
+
+	// Create the tester identity
+	ident := createRecreateIdentity(client, testerUsername, rest_model.IdentityTypeUser, false)
+
+	// Enroll the identity
+	identConfig := enrollIdentity(client, ident.Payload.Data.ID)
+
+	// Create a json config file
+	output, err := os.Create(testerUsername + ".json")
+	if err != nil {
+		fmt.Println(err)
+		log.Fatal("Failed to create output config file")
+	}
+	defer func() {
+		_ = output.Close()
+		err = os.Remove(testerUsername + ".json")
+		if err != nil {
+			fmt.Println(err)
+			log.Fatal("Failed to delete json config file")
+		}
+	}()
+	enc := json.NewEncoder(output)
+	enc.SetEscapeHTML(false)
+	fmt.Println("output is:", output)
+
+	encErr := enc.Encode(&identConfig)
+	if encErr != nil {
+		fmt.Println(err)
+		log.Fatal("Failed to generate encoded output")
+	}
+
+}
+
+func runReflectClient() {
+	// Delete reflect identity if it exists
+	// create identity for reflect client
+	testerUsername := "gotester"
+	ident := createRecreateIdentity(client, testerUsername, rest_model.IdentityTypeUser, false)
+
+	// enroll identity for reflect client
+	zitiConfig := enrollIdentity(client, ident.Payload.Data.ID)
+
+	service := createService(client, "serviceName", nil)
+
+	//create service policy Dial for client
+	dialSP := createServicePolicy(client, "serviceName.dial", rest_model.DialBindDial, rest_model.Roles{"@" + ident.Payload.Data.ID}, rest_model.Roles{"@" + service.ID})
+	defer func() { _ = deleteServicePolicyByID(client, dialSP.ID) }()
+
+	//dial service
+	svc.Client(zitiConfig, service.ID)
+
+}
+
+func bootstrapReflectServer() {
+	serviceName := "myService"
+	var service rest_model.CreateLocation
+
+	//delete reflect server indetity if needed
+	// Delete reflect identity if it exists
+	testerUsername := "gotester"
+	ident := createRecreateIdentity(client, testerUsername, rest_model.IdentityTypeUser, false)
+
+	// enroll reflect server identity
+	zitiConfig := enrollIdentity(client, ident.Payload.Data.ID)
+
+	existingService := getServiceByName(client, serviceName)
+
+	if existingService == nil {
+		service = createService(client, serviceName, nil)
+		fmt.Println("Service created:", service)
+	}
+	fmt.Println("Using existing service:", service)
+
+	// if len(serviceName) < 0 {
+	// 	service = createService(client, serviceName, nil)
+	// }
+	// // service := createService(client, serviceName, nil)
+	// fmt.Println("service je ovo: ", service)
+
+	// bind reflect server service
+	// serviceName := "basic.web.smoke.test.service"
+	// erName := os.Getenv("ZITI_ROUTER_NAME")
+	// if erName == "" {
+	// 	erName = "ziti-edge-router"
+	// }
+	// hostingRouterName := erName
+	// hostRouterIdent := getIdentityByName(client, hostingRouterName)
+	// webTestService := getServiceByName(client, serviceName)
+	bindSP := createServicePolicy(client, serviceName+".bind", rest_model.DialBindBind, rest_model.Roles{"@" + ident.Payload.Data.ID}, rest_model.Roles{"@" + service.ID})
+	defer func() { _ = deleteServicePolicyByID(client, bindSP.ID) }()
+	fmt.Println("bind service policy is:", bindSP)
+
+	//then I have reflect server running
+
+	//bind service
+	svc.Server(zitiConfig, service.ID)
 
 }
 
@@ -109,7 +215,7 @@ func addToOpenZiti(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Printf("inputs: %s %s", email, oidcProvider)
 
-	createdIdentity := createIdentity(client, email, email, rest_model.IdentityTypeUser, false)
+	createdIdentity := createRecreateIdentity(client, email, rest_model.IdentityTypeUser, false)
 	jwtToken = getJWTToken(client, createdIdentity.Payload.Data.ID) // Store the JWT token
 
 	fmt.Println("createdIdentity is: ", createdIdentity)
@@ -171,7 +277,7 @@ func getJWTToken(client *rest_management_api_client.ZitiEdgeManagement, identity
 	return resp.GetPayload().Data.Enrollment.Ott.JWT
 }
 
-func createIdentity(client *rest_management_api_client.ZitiEdgeManagement, name string, email string,
+func createRecreateIdentity(client *rest_management_api_client.ZitiEdgeManagement, name string,
 	identType rest_model.IdentityType, isAdmin bool) *identity.CreateIdentityCreated {
 	i := &rest_model.IdentityCreate{
 		Enrollment: &rest_model.IdentityCreateEnrollment{
@@ -188,15 +294,19 @@ func createIdentity(client *rest_management_api_client.ZitiEdgeManagement, name 
 	p := identity.NewCreateIdentityParams()
 	p.Identity = i
 	p.Context = context.Background()
+	fmt.Println("p identity is this: ", p.Identity)
 
 	searchParam := identity.NewListIdentitiesParams()
-	filter := "name contains \"" + email + "\""
+	fmt.Println("searchParam is this: ", searchParam)
+	filter := "name = \"" + name + "\""
+	fmt.Println("filter is this: ", filter)
 	searchParam.Filter = &filter
+	fmt.Println("searchParam novi is this: ", searchParam)
 	id, err := client.Identity.ListIdentities(searchParam, nil)
+	fmt.Println("id is this: ", id)
 	if err != nil {
 		fmt.Println(err)
 	}
-
 	if id != nil && len(id.Payload.Data) > 0 {
 		delParam := identity.NewDeleteIdentityParams()
 		delParam.ID = *id.Payload.Data[0].ID
@@ -224,25 +334,34 @@ func createIdentity(client *rest_management_api_client.ZitiEdgeManagement, name 
 	return ident
 }
 
-// func createService(client *rest_management_api_client.ZitiEdgeManagement, name string, serviceConfigs []string) rest_model.CreateLocation {
-// 	encryptOn := true // Default
-// 	serviceCreate := &rest_model.ServiceCreate{
-// 		Configs:            serviceConfigs,
-// 		EncryptionRequired: &encryptOn,
-// 		Name:               &name,
-// 	}
-// 	serviceParams := &service.CreateServiceParams{
-// 		Service: serviceCreate,
-// 		Context: context.Background(),
-// 	}
-// 	serviceParams.SetTimeout(30 * time.Second)
-// 	resp, err := client.Service.CreateService(serviceParams, nil)
-// 	if err != nil {
-// 		fmt.Println(err)
-// 		log.Fatal("Failed to create " + name + " service")
-// 	}
-// 	return *resp.GetPayload().Data
-// }
+func createService(client *rest_management_api_client.ZitiEdgeManagement, name string, serviceConfigs []string) rest_model.CreateLocation {
+
+	// var resp *service.CreateServiceCreated
+
+	// if len(name) > 0 {
+	// 	return *resp.GetPayload().Data
+	// }
+
+	encryptOn := true // Default
+	serviceCreate := &rest_model.ServiceCreate{
+		Configs:            serviceConfigs,
+		EncryptionRequired: &encryptOn,
+		Name:               &name,
+	}
+	serviceParams := &service.CreateServiceParams{
+		Service: serviceCreate,
+		Context: context.Background(),
+	}
+	serviceParams.SetTimeout(30 * time.Second)
+
+	// make code that checks if there is already that service name and just use that
+	resp, err := client.Service.CreateService(serviceParams, nil)
+	if err != nil {
+		fmt.Println(err)
+		log.Fatal("Failed to create " + name + " service")
+	}
+	return *resp.GetPayload().Data
+}
 
 func createServicePolicy(client *rest_management_api_client.ZitiEdgeManagement, name string, servType rest_model.DialBind, identityRoles rest_model.Roles, serviceRoles rest_model.Roles) rest_model.CreateLocation {
 
@@ -310,6 +429,50 @@ func getServiceByName(client *rest_management_api_client.ZitiEdgeManagement, nam
 		fmt.Println(err)
 	}
 	return resp.GetPayload().Data[0]
+}
+
+func enrollIdentity(client *rest_management_api_client.ZitiEdgeManagement, identityID string) *ziti.Config {
+	// Get the identity object
+	params := &identity.DetailIdentityParams{
+		Context: context.Background(),
+		ID:      identityID,
+	}
+	params.SetTimeout(30 * time.Second)
+	resp, err := client.Identity.DetailIdentity(params, nil)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Enroll the identity
+	tkn, _, err := enroll.ParseToken(resp.GetPayload().Data.Enrollment.Ott.JWT)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	flags := enroll.EnrollmentFlags{
+		Token:  tkn,
+		KeyAlg: "RSA",
+	}
+	conf, err := enroll.Enroll(flags)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return conf
+}
+
+func deleteIdentityByID(client *rest_management_api_client.ZitiEdgeManagement, id string) *identity.DeleteIdentityOK {
+	deleteParams := &identity.DeleteIdentityParams{
+		ID: id,
+	}
+	deleteParams.SetTimeout(30 * time.Second)
+	resp, err := client.Identity.DeleteIdentity(deleteParams, nil)
+	if err != nil {
+		fmt.Println(err)
+	}
+	return resp
 }
 
 // func createIdentityOIDC(name string, email string,
