@@ -150,7 +150,7 @@ func runReflectClient() {
 
 func bootstrapReflectServer() {
 	serviceName := "myService"
-	var service rest_model.CreateLocation
+	var serviceID string
 
 	//delete reflect server indetity if needed
 	// Delete reflect identity if it exists
@@ -163,10 +163,12 @@ func bootstrapReflectServer() {
 	existingService := getServiceByName(client, serviceName)
 
 	if existingService == nil {
-		service = createService(client, serviceName, nil)
-		fmt.Println("Service created:", service)
+		serviceID = createService(client, serviceName, nil).ID
+		fmt.Println("Service created:", serviceID)
+	} else {
+		fmt.Println("Using existing service:", existingService.Name)
+		serviceID = *existingService.ID
 	}
-	fmt.Println("Using existing service:", service)
 
 	// if len(serviceName) < 0 {
 	// 	service = createService(client, serviceName, nil)
@@ -183,14 +185,14 @@ func bootstrapReflectServer() {
 	// hostingRouterName := erName
 	// hostRouterIdent := getIdentityByName(client, hostingRouterName)
 	// webTestService := getServiceByName(client, serviceName)
-	bindSP := createServicePolicy(client, serviceName+".bind", rest_model.DialBindBind, rest_model.Roles{"@" + ident.Payload.Data.ID}, rest_model.Roles{"@" + service.ID})
+	bindSP := createServicePolicy(client, serviceName+".Bind", rest_model.DialBindBind, rest_model.Roles{ /*"@" + ident.Payload.Data.ID*/ }, rest_model.Roles{"@" + serviceName})
 	defer func() { _ = deleteServicePolicyByID(client, bindSP.ID) }()
 	fmt.Println("bind service policy is:", bindSP)
 
 	//then I have reflect server running
 
 	//bind service
-	svc.Server(zitiConfig, service.ID)
+	svc.Server(zitiConfig, serviceID)
 
 }
 
@@ -377,6 +379,7 @@ func createServicePolicy(client *rest_management_api_client.ZitiEdgeManagement, 
 		Policy:  servicePolicy,
 		Context: context.Background(),
 	}
+	fmt.Println("service policy is: ", servicePolicy)
 	params.SetTimeout(30 * time.Second)
 	resp, err := client.ServicePolicy.CreateServicePolicy(params, nil)
 	if err != nil {
