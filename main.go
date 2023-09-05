@@ -64,7 +64,7 @@ func main() {
 	createService("reflectService", "reflect-service") //"reflect-service")
 	createIdentity(rest_model.IdentityTypeDevice, "reflect-client", "reflect.clients")
 	createIdentity(rest_model.IdentityTypeDevice, "reflect-server", "reflect.servers")
-	// enrollIdentity("reflect-client.jwt")
+	clientIdentity := enrollIdentity("reflect-client")
 	serverIdentity = enrollIdentity("reflect-server")
 	// 	bindSP := createServicePolicy(client, "basic.web.smoke.test.service.bind", rest_model.DialBindBind, rest_model.Roles{"@" + *hostRouterIdent.ID}, rest_model.Roles{"@" + *webTestService.ID})
 
@@ -72,7 +72,7 @@ func main() {
 	createServicePolicy("reflect-client-bind", rest_model.DialBindBind, rest_model.Roles{"#reflect.servers"}, rest_model.Roles{"#reflect-service"})
 
 	go svc.Server(serverIdentity, "reflectService")
-
+	svc.Client(clientIdentity, "reflectService")
 }
 
 const (
