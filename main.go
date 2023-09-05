@@ -77,7 +77,7 @@ func main() {
 
 	hostingRouterName := erName
 	serviceName := "serviceName"
-	testerUsername := "gotester"
+	testerUsername := "admin"
 
 	hostRouterIdent := getIdentityByName(client, hostingRouterName)
 	webTestService := getServiceByName(client, serviceName)
@@ -131,7 +131,7 @@ func main() {
 func runReflectClient() {
 	// Delete reflect identity if it exists
 	// create identity for reflect client
-	testerUsername := "gotester"
+	testerUsername := "admin"
 	ident := createRecreateIdentity(client, testerUsername, rest_model.IdentityTypeUser, false)
 
 	// enroll identity for reflect client
@@ -154,7 +154,7 @@ func bootstrapReflectServer() {
 
 	//delete reflect server indetity if needed
 	// Delete reflect identity if it exists
-	testerUsername := "gotester"
+	testerUsername := "admin"
 	ident := createRecreateIdentity(client, testerUsername, rest_model.IdentityTypeUser, false)
 
 	// enroll reflect server identity
@@ -169,6 +169,7 @@ func bootstrapReflectServer() {
 		fmt.Println("Using existing service:", existingService.Name)
 		serviceID = *existingService.ID
 	}
+	fmt.Println("Service ID is :", serviceID)
 
 	// if len(serviceName) < 0 {
 	// 	service = createService(client, serviceName, nil)
@@ -186,7 +187,7 @@ func bootstrapReflectServer() {
 	// hostRouterIdent := getIdentityByName(client, hostingRouterName)
 	// webTestService := getServiceByName(client, serviceName)
 	bindSP := createServicePolicy(client, serviceName+".Bind", rest_model.DialBindBind, rest_model.Roles{ /*"@" + ident.Payload.Data.ID*/ }, rest_model.Roles{"@" + serviceName})
-	defer func() { _ = deleteServicePolicyByID(client, bindSP.ID) }()
+	//defer func() { _ = deleteServicePolicyByID(client, bindSP.ID) }()
 	fmt.Println("bind service policy is:", bindSP)
 
 	//then I have reflect server running
@@ -337,13 +338,6 @@ func createRecreateIdentity(client *rest_management_api_client.ZitiEdgeManagemen
 }
 
 func createService(client *rest_management_api_client.ZitiEdgeManagement, name string, serviceConfigs []string) rest_model.CreateLocation {
-
-	// var resp *service.CreateServiceCreated
-
-	// if len(name) > 0 {
-	// 	return *resp.GetPayload().Data
-	// }
-
 	encryptOn := true // Default
 	serviceCreate := &rest_model.ServiceCreate{
 		Configs:            serviceConfigs,
@@ -367,13 +361,15 @@ func createService(client *rest_management_api_client.ZitiEdgeManagement, name s
 
 func createServicePolicy(client *rest_management_api_client.ZitiEdgeManagement, name string, servType rest_model.DialBind, identityRoles rest_model.Roles, serviceRoles rest_model.Roles) rest_model.CreateLocation {
 
+	// var resp *service_policy.CreateServicePolicyCreated
+
 	defaultSemantic := rest_model.SemanticAllOf
 	servicePolicy := &rest_model.ServicePolicyCreate{
 		IdentityRoles: identityRoles,
 		Name:          &name,
 		Semantic:      &defaultSemantic,
-		ServiceRoles:  serviceRoles,
-		Type:          &servType,
+		//ServiceRoles:  serviceRoles,
+		Type: &servType,
 	}
 	params := &service_policy.CreateServicePolicyParams{
 		Policy:  servicePolicy,
@@ -381,13 +377,26 @@ func createServicePolicy(client *rest_management_api_client.ZitiEdgeManagement, 
 	}
 	fmt.Println("service policy is: ", servicePolicy)
 	params.SetTimeout(30 * time.Second)
+
+	// if len(name) > 0 {
+	// 	fmt.Println("sps craeting:", name)
+	// 	return *resp.GetPayload().Data
+
+	// }
+	// if name == "" {
+
+	// }
 	resp, err := client.ServicePolicy.CreateServicePolicy(params, nil)
-	if err != nil {
+	// a := fmt.Sprintf("*resp.GetPayload().Data je %T", resp.GetPayload().Data)
+	// fmt.Println(a)
+	if err == nil { // if err == nil {
 		fmt.Println(err)
-		log.Fatal("Failed to create the " + name + " service policy")
+		return *resp.GetPayload().Data
+		// TODO error, name must be unique!!!
+		//log.Fatal("Failed to create the " + name + " service policy")
 	}
 
-	return *resp.GetPayload().Data
+	return rest_model.CreateLocation{}
 }
 
 func deleteServicePolicyByID(client *rest_management_api_client.ZitiEdgeManagement, id string) *service_policy.DeleteServicePolicyOK {
@@ -476,6 +485,83 @@ func deleteIdentityByID(client *rest_management_api_client.ZitiEdgeManagement, i
 		fmt.Println(err)
 	}
 	return resp
+}
+
+//=====================================
+// ziti edge delete identity reflect-server
+
+// ziti edge delete identity reflect-client
+// ziti edge delete serivce-policy reflect-client-bind
+// ziti edge delete serivce-policy reflect-client-dial
+// ziti edge delete service reflectService
+
+// ziti edge create service reflectService --role-attributes reflect-service
+// ziti edge create identity device reflect-client -a reflect.clients -o reflect-client.jwt
+// ziti edge create identity device reflect-server -a reflect.servers -o reflect-server.jwt
+// ziti edge enroll --jwt reflect-client.jwt
+// ziti edge enroll --jwt reflect-server.jwt
+// ziti edge create service-policy reflect-client-dial Dial --identity-roles '#reflect.clients' --service-roles '#reflect-service'
+// ziti edge create service-policy reflect-client-bind Bind --identity-roles '#reflect.servers' --service-roles '#reflect-service'
+//======================================
+
+// deleteIdentity reflect-server
+func deleteIdentityReflectServer(identityName string) {
+	// logic to delete reflect-server
+}
+
+// deleteIdentity reflect-client
+func deleteIdentityReflectClient(identityName string) {
+	// logic to delete reflect-client
+}
+
+// deleteServicePolicy reflect-client-bind
+func deleteServicePolicyReflectClientBind(policyName string) {
+	// logic to delete reflect-client-bind
+}
+
+// deleteServicePolicy reflect-client-dial
+func deleteServicePolicyReflectClientDial(policyName string) {
+	// logic to delete reflect-client-dial
+}
+
+// deleteService reflectService
+func deleteService(serviceName string) {
+	// logic delete reflectService
+}
+
+// createService reflectService --role-attributes reflect-service
+func createServiceReflectService(serviceName string, roleAttributes string) {
+	// logic to create reflectService
+}
+
+// createIdentity device reflect-client -a reflect.clients -o reflect-client.jwt
+func createIdentityReflectClient(identityName string, client string, jwt string) {
+	// logic to create reflect-client
+}
+
+// createIdentity device reflect-server -a reflect.servers -o reflect-server.jwt
+func createIdentityReflectServer(identityName string, server string, jwt string) {
+	// logic to create reflect-server
+}
+
+// enrollIdentity --jwt reflect-client.jwt
+func enrollIdentityReflectClient(jwt string) {
+	// logic to enroll reflect-client
+}
+
+// enrollIdentity --jwt reflect-server.jwt
+func enrollIdentityReflectServer(jwt string) {
+	// logic to enroll reflect-server
+}
+
+// createServicePolicy reflect-client-dial Dial --identity-roles '#reflect.clients' --service-roles '#reflect-service'
+func createServicePolicyReflectClientDial(policyName string, identityRoles string, serviceRoles string) {
+	// logic to create service policy reflect-client-dial
+}
+
+// createServicePolicy reflect-client-bind Bind --identity-roles '#reflect.servers' --service-roles '#reflect-service'
+func createServicePolicyReflectClientBind(policyName string, identityRoles string, serviceRoles string) {
+	// logic to create reflect-client-bind
 }
 
 // func createIdentityOIDC(name string, email string,
