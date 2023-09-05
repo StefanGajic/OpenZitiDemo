@@ -70,6 +70,9 @@ func main() {
 
 	createServicePolicy("reflect-client-dial", rest_model.DialBindDial, rest_model.Roles{"#reflect.clients"}, rest_model.Roles{"#reflect-service"})
 	createServicePolicy("reflect-client-bind", rest_model.DialBindBind, rest_model.Roles{"#reflect.servers"}, rest_model.Roles{"#reflect-service"})
+
+	go svc.Server(serverIdentity, "reflectService")
+
 }
 
 const (
@@ -650,14 +653,13 @@ func deleteServicePolicy(servicePolicyName string) {
 
 // createService reflectService --role-attributes reflect-service
 func createService(serviceName string, attribute string) rest_model.CreateLocation {
-	var roleAttributes []string
 	//var serviceConfigs []string
 	encryptOn := true // Default
 	serviceCreate := &rest_model.ServiceCreate{
 		//Configs:            serviceConfigs,
 		EncryptionRequired: &encryptOn,
 		Name:               &serviceName,
-		RoleAttributes:     roleAttributes,
+		RoleAttributes:     rest_model.Roles{attribute},
 	}
 	serviceParams := &service.CreateServiceParams{
 		Service: serviceCreate,
