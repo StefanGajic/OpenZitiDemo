@@ -64,7 +64,7 @@ func main() {
 	createService("reflectService", "reflect-service") //"reflect-service")
 	createIdentity(rest_model.IdentityTypeDevice, "reflect-client", "reflect.clients")
 	createIdentity(rest_model.IdentityTypeDevice, "reflect-server", "reflect.servers")
-	clientIdentity := enrollIdentity("reflect-client")
+	//clientIdentity := enrollIdentity("reflect-client")
 	serverIdentity = enrollIdentity("reflect-server")
 	// 	bindSP := createServicePolicy(client, "basic.web.smoke.test.service.bind", rest_model.DialBindBind, rest_model.Roles{"@" + *hostRouterIdent.ID}, rest_model.Roles{"@" + *webTestService.ID})
 
@@ -72,7 +72,11 @@ func main() {
 	createServicePolicy("reflect-client-bind", rest_model.DialBindBind, rest_model.Roles{"#reflect.servers"}, rest_model.Roles{"#reflect-service"})
 
 	go svc.Server(serverIdentity, "reflectService")
-	svc.Client(clientIdentity, "reflectService")
+	// I dont want to start the client in the server
+	// start the old server to deliver index page
+	// start a client somethewrer else
+	//svc.Client(clientIdentity, "reflectService")
+	Oldmain()
 }
 
 const (
@@ -113,7 +117,7 @@ func Oldmain() {
 	mux.Handle("/description", http.HandlerFunc(showToken))
 	mux.Handle("/download-token", http.HandlerFunc(downloadToken))
 
-	go bootstrapReflectServer()
+	// go bootstrapReflectServer()
 
 	svr.Handler = mux
 	port := 18000
@@ -186,7 +190,7 @@ func runReflectClient() {
 	ident := createRecreateIdentity(client, testerUsername, rest_model.IdentityTypeUser, false)
 
 	// enroll identity for reflect client
-	zitiConfig := OldenrollIdentity(client, ident.Payload.Data.ID)
+	//zitiConfig := OldenrollIdentity(client, ident.Payload.Data.ID)
 
 	service := OldcreateService(client, "serviceName", nil)
 
@@ -195,7 +199,7 @@ func runReflectClient() {
 	defer func() { _ = deleteServicePolicyByID(client, dialSP.ID) }()
 
 	//dial service
-	svc.Client(zitiConfig, service.ID)
+	// svc.Client(zitiConfig, service.ID)
 
 }
 
@@ -339,7 +343,7 @@ func createRecreateIdentity(client *rest_management_api_client.ZitiEdgeManagemen
 		},
 		IsAdmin:                   &isAdmin,
 		Name:                      &name,
-		RoleAttributes:            nil,
+		RoleAttributes:            &rest_model.Attributes{"reflect.clients"},
 		ServiceHostingCosts:       nil,
 		ServiceHostingPrecedences: nil,
 		Tags:                      nil,
