@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"crypto/x509"
-	"encoding/json"
 	"fmt"
 	"html/template"
 	"log"
@@ -11,9 +10,9 @@ import (
 	"os"
 	"time"
 
+	common "example.com/openzitidemo/common"
 	svc "example.com/openzitidemo/service"
 
-	"example.com/openzitidemo/common"
 	"github.com/openziti/edge-api/rest_management_api_client"
 	"github.com/openziti/edge-api/rest_management_api_client/identity"
 	"github.com/openziti/edge-api/rest_management_api_client/service"
@@ -59,12 +58,14 @@ func main() {
 	deleteServicePolicy("reflect-client-bind")
 	deleteServicePolicy("reflect-client-dial")
 	deleteService("reflectService")
+	deleteService("httpService")
 
 	// real shit creating
 	createService("reflectService", "reflect-service") //"reflect-service")
-	createIdentity(rest_model.IdentityTypeDevice, "reflect-client", "reflect.clients")
+	createService("httpService", "reflect-service")
+	// createIdentity(rest_model.IdentityTypeDevice, "reflect-client", "reflect.clients")
 	createIdentity(rest_model.IdentityTypeDevice, "reflect-server", "reflect.servers")
-	//clientIdentity := enrollIdentity("reflect-client")
+	// clientIdentity := enrollIdentity("reflect-client")
 	serverIdentity = enrollIdentity("reflect-server")
 	// 	bindSP := createServicePolicy(client, "basic.web.smoke.test.service.bind", rest_model.DialBindBind, rest_model.Roles{"@" + *hostRouterIdent.ID}, rest_model.Roles{"@" + *webTestService.ID})
 
@@ -77,6 +78,8 @@ func main() {
 	// start a client somethewrer else
 	//svc.Client(clientIdentity, "reflectService")
 	Oldmain()
+
+	common.CreateServer()
 }
 
 const (
@@ -116,71 +119,24 @@ func Oldmain() {
 	mux.Handle("/", http.HandlerFunc(serveIndexHTML))
 	mux.Handle("/description", http.HandlerFunc(showToken))
 	mux.Handle("/download-token", http.HandlerFunc(downloadToken))
+	mux.Handle("/hello", http.HandlerFunc(hello))
 
 	// go bootstrapReflectServer()
 
 	svr.Handler = mux
 	port := 18000
 	ln := common.CreateUnderlayListener(port)
+	//ln := common.CreateZitiListener(serverIdentity, "httpService")
 	log.Printf("Starting insecure server on %d\n", port)
 	if err := svr.Serve(ln); err != nil {
 		log.Fatal(err)
 
 	}
+}
 
-	// go bootstrapReflectServer()
-
-	hostingRouterName := erName
-	serviceName := "serviceName"
-	testerUsername := "admin"
-
-	hostRouterIdent := getIdentityByName(client, hostingRouterName)
-	webTestService := getServiceByName(client, serviceName)
-
-	// // Create a service that "links" the dial and bind configs
-	// createService(client, serviceName, []string{bindSvcConfig.ID, dialSvcConfig.ID})
-
-	bindSP := OldcreateServicePolicy(client, "serviceName.bind", rest_model.DialBindBind, rest_model.Roles{"@" + *hostRouterIdent.ID}, rest_model.Roles{"@" + *webTestService.ID})
-	defer func() { _ = deleteServicePolicyByID(client, bindSP.ID) }()
-	fmt.Println("bind service policy is:", bindSP)
-
-	testerIdent := getIdentityByName(client, testerUsername)
-
-	dialSP := OldcreateServicePolicy(client, "serviceName.dial", rest_model.DialBindDial, rest_model.Roles{"@" + *testerIdent.ID}, rest_model.Roles{"@" + *webTestService.ID})
-	defer func() { _ = deleteServicePolicyByID(client, dialSP.ID) }()
-
-	fmt.Println("dial service policy is:", dialSP)
-
-	// Create the tester identity
-	ident := createRecreateIdentity(client, testerUsername, rest_model.IdentityTypeUser, false)
-
-	// Enroll the identity
-	identConfig := OldenrollIdentity(client, ident.Payload.Data.ID)
-
-	// Create a json config file
-	output, err := os.Create(testerUsername + ".json")
-	if err != nil {
-		fmt.Println(err)
-		log.Fatal("Failed to create output config file")
-	}
-	defer func() {
-		_ = output.Close()
-		err = os.Remove(testerUsername + ".json")
-		if err != nil {
-			fmt.Println(err)
-			log.Fatal("Failed to delete json config file")
-		}
-	}()
-	enc := json.NewEncoder(output)
-	enc.SetEscapeHTML(false)
-	fmt.Println("output is:", output)
-
-	encErr := enc.Encode(&identConfig)
-	if encErr != nil {
-		fmt.Println(err)
-		log.Fatal("Failed to generate encoded output")
-	}
-
+func hello(w http.ResponseWriter, r *http.Request) {
+	host, _ := os.Hostname()
+	fmt.Fprintf(w, "zitified hello from %s", host)
 }
 
 func runReflectClient() {

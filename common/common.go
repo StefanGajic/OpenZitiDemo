@@ -9,6 +9,9 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"time"
+
+	"github.com/openziti/sdk-golang/ziti"
 )
 
 const (
@@ -36,6 +39,24 @@ func CreateUnderlayListener(port int) net.Listener {
 		panic(err)
 	}
 	return ln
+}
+
+func CreateZitiListener(serverIdentity *ziti.Config, serviceName string) net.Listener {
+	options := ziti.ListenOptions{
+		ConnectTimeout: 5 * time.Minute,
+	}
+	ctx, err := ziti.NewContext(serverIdentity)
+
+	if err != nil {
+		panic(err)
+	}
+
+	listener, err := ctx.ListenWithOptions(serviceName, &options)
+	if err != nil {
+		fmt.Printf("Error binding service %+v\n", err)
+		panic(err)
+	}
+	return listener
 }
 
 func index(w http.ResponseWriter, r *http.Request) {
