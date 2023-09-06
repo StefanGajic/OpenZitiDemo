@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"html/template"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"time"
@@ -77,9 +78,15 @@ func main() {
 	// start the old server to deliver index page
 	// start a client somethewrer else
 	//svc.Client(clientIdentity, "reflectService")
-	Oldmain()
+	port := 18000
+	underlayListener := common.CreateUnderlayListener(port)
+	zitifiedListener := common.CreateZitiListener(serverIdentity, "httpService")
+	log.Printf("Starting insecure server on %d\n", port)
+	go serveHTTP(underlayListener)
+	go serveHTTP(zitifiedListener)
 
-	common.CreateServer()
+	time.Sleep(600 * time.Second)
+	// common.CreateServer()
 }
 
 const (
@@ -89,29 +96,7 @@ const (
 var client *rest_management_api_client.ZitiEdgeManagement
 var jwtToken string
 
-func Oldmain() {
-	var err error
-	zitiAdminUsername := os.Getenv("OPENZITI_USER")
-	zitiAdminPassword := os.Getenv("OPENZITI_PWD")
-	ctrlAddress := os.Getenv("OPENZITI_CTRL")
-	erName := os.Getenv("ZITI_ROUTER_NAME")
-	if erName == "" {
-		erName = "ziti-edge-router"
-	}
-
-	// Authenticate with the controller
-	caCerts, err := rest_util.GetControllerWellKnownCas(ctrlAddress) // "https://stefan-L15:1280"
-	if err != nil {
-		log.Fatal(err)
-	}
-	caPool := x509.NewCertPool()
-	for _, ca := range caCerts {
-		caPool.AddCert(ca)
-	}
-	client, err = rest_util.NewEdgeManagementClientWithUpdb(zitiAdminUsername, zitiAdminPassword, ctrlAddress, caPool)
-	if err != nil {
-		log.Fatal(err)
-	}
+func serveHTTP(listener net.Listener) {
 
 	svr := &http.Server{}
 	mux := http.NewServeMux()
@@ -121,14 +106,9 @@ func Oldmain() {
 	mux.Handle("/download-token", http.HandlerFunc(downloadToken))
 	mux.Handle("/hello", http.HandlerFunc(hello))
 
-	// go bootstrapReflectServer()
-
 	svr.Handler = mux
-	port := 18000
-	ln := common.CreateUnderlayListener(port)
-	//ln := common.CreateZitiListener(serverIdentity, "httpService")
-	log.Printf("Starting insecure server on %d\n", port)
-	if err := svr.Serve(ln); err != nil {
+
+	if err := svr.Serve(listener); err != nil {
 		log.Fatal(err)
 
 	}
@@ -156,55 +136,6 @@ func runReflectClient() {
 
 	//dial service
 	// svc.Client(zitiConfig, service.ID)
-
-}
-
-func bootstrapReflectServer() {
-	serviceName := "myService"
-	var serviceID string
-
-	//delete reflect server indetity if needed
-	// Delete reflect identity if it exists
-	testerUsername := "admin"
-	ident := createRecreateIdentity(client, testerUsername, rest_model.IdentityTypeUser, false)
-
-	// enroll reflect server identity
-	zitiConfig := OldenrollIdentity(client, ident.Payload.Data.ID)
-
-	existingService := getServiceByName(client, serviceName)
-
-	if existingService == nil {
-		serviceID = OldcreateService(client, serviceName, nil).ID
-		fmt.Println("Service created:", serviceID)
-	} else {
-		fmt.Println("Using existing service:", existingService.Name)
-		serviceID = *existingService.ID
-	}
-	fmt.Println("Service ID is :", serviceID)
-
-	// if len(serviceName) < 0 {
-	// 	service = createService(client, serviceName, nil)
-	// }
-	// // service := createService(client, serviceName, nil)
-	// fmt.Println("service je ovo: ", service)
-
-	// bind reflect server service
-	// serviceName := "basic.web.smoke.test.service"
-	// erName := os.Getenv("ZITI_ROUTER_NAME")
-	// if erName == "" {
-	// 	erName = "ziti-edge-router"
-	// }
-	// hostingRouterName := erName
-	// hostRouterIdent := getIdentityByName(client, hostingRouterName)
-	// webTestService := getServiceByName(client, serviceName)
-	bindSP := OldcreateServicePolicy(client, serviceName+".Bind", rest_model.DialBindBind, rest_model.Roles{ /*"@" + ident.Payload.Data.ID*/ }, rest_model.Roles{"@" + serviceName})
-	//defer func() { _ = deleteServicePolicyByID(client, bindSP.ID) }()
-	fmt.Println("bind service policy is:", bindSP)
-
-	//then I have reflect server running
-
-	//bind service
-	svc.Server(zitiConfig, serviceID)
 
 }
 
