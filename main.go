@@ -36,7 +36,7 @@ func init() {
 		erName = "ziti-edge-router"
 	}
 	// Authenticate with the controller
-	caCerts, err := rest_util.GetControllerWellKnownCas(ctrlAddress) // "https://stefan-L15:1280"
+	caCerts, err := rest_util.GetControllerWellKnownCas(ctrlAddress)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -53,7 +53,7 @@ func init() {
 }
 
 func main() {
-	// check and clean if needed
+
 	deleteIdentity("reflect-server")
 	deleteIdentity("reflect-client")
 	deleteServicePolicy("reflect-client-bind")
@@ -61,14 +61,12 @@ func main() {
 	deleteService("reflectService")
 	deleteService("httpService")
 
-	// real shit creating
 	createService("reflectService", "reflect-service") //"reflect-service")
 	createService("httpService", "reflect-service")
 	// createIdentity(rest_model.IdentityTypeDevice, "reflect-client", "reflect.clients")
 	createIdentity(rest_model.IdentityTypeDevice, "reflect-server", "reflect.servers")
 	// clientIdentity := enrollIdentity("reflect-client")
 	serverIdentity = enrollIdentity("reflect-server")
-	// 	bindSP := createServicePolicy(client, "basic.web.smoke.test.service.bind", rest_model.DialBindBind, rest_model.Roles{"@" + *hostRouterIdent.ID}, rest_model.Roles{"@" + *webTestService.ID})
 
 	createServicePolicy("reflect-client-dial", rest_model.DialBindDial, rest_model.Roles{"#reflect.clients"}, rest_model.Roles{"#reflect-service"})
 	createServicePolicy("reflect-client-bind", rest_model.DialBindBind, rest_model.Roles{"#reflect.servers"}, rest_model.Roles{"#reflect-service"})
@@ -88,10 +86,6 @@ func main() {
 	time.Sleep(600 * time.Second)
 	// common.CreateServer()
 }
-
-const (
-	defaultProvider = "auth0"
-)
 
 var client *rest_management_api_client.ZitiEdgeManagement
 var jwtToken string
@@ -119,25 +113,8 @@ func hello(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "zitified hello from %s", host)
 }
 
-func runReflectClient() {
-	// Delete reflect identity if it exists
-	// create identity for reflect client
-	testerUsername := "admin"
-	ident := createRecreateIdentity(client, testerUsername, rest_model.IdentityTypeUser, false)
-
-	// enroll identity for reflect client
-	//zitiConfig := OldenrollIdentity(client, ident.Payload.Data.ID)
-
-	service := OldcreateService(client, "serviceName", nil)
-
-	//create service policy Dial for client
-	dialSP := OldcreateServicePolicy(client, "serviceName.dial", rest_model.DialBindDial, rest_model.Roles{"@" + ident.Payload.Data.ID}, rest_model.Roles{"@" + service.ID})
-	defer func() { _ = deleteServicePolicyByID(client, dialSP.ID) }()
-
-	//dial service
-	// svc.Client(zitiConfig, service.ID)
-
-}
+// add a func to take 2 params and do math! got sample cod with that, take 2 query perms and do whatever
+// expose the math func now
 
 func serveIndexHTML(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, "index.html")
@@ -153,20 +130,16 @@ func addToOpenZiti(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	oidcProvider := r.URL.Query().Get("oidcProvider")
-	if oidcProvider == "" {
-		log.Printf("oidcProvider not provided. using default: %s", defaultProvider)
-		oidcProvider = defaultProvider
-	}
-	log.Printf("inputs: %s %s", email, oidcProvider)
+	// (client *rest_management_api_client.ZitiEdgeManagement, name string, identType rest_model.IdentityType)
 
+	// (identType rest_model.IdentityType, identityName string, attributes string)
+	// createdIdentity := createIdentity(client, email, rest_model.IdentityTypeUser)
+	// TODO fix this so it uses createIdentity
 	createdIdentity := createRecreateIdentity(client, email, rest_model.IdentityTypeUser, false)
-	jwtToken = getJWTToken(client, createdIdentity.Payload.Data.ID) // Store the JWT token
-
+	jwtToken = getJWTToken(client, createdIdentity.Payload.Data.ID)
 	fmt.Println("createdIdentity is: ", createdIdentity)
 
 	http.Redirect(w, r, "/description?token="+createdIdentity.Payload.Data.ID, http.StatusSeeOther)
-	// http.Redirect(w, r, "/description?token="+jwtToken, http.StatusSeeOther)
 }
 
 func showToken(w http.ResponseWriter, r *http.Request) {
@@ -278,173 +251,6 @@ func createRecreateIdentity(client *rest_management_api_client.ZitiEdgeManagemen
 	params.SetTimeout(30 * time.Second)
 	return ident
 }
-
-func OldcreateService(client *rest_management_api_client.ZitiEdgeManagement, name string, serviceConfigs []string) rest_model.CreateLocation {
-	encryptOn := true // Default
-	serviceCreate := &rest_model.ServiceCreate{
-		Configs:            serviceConfigs,
-		EncryptionRequired: &encryptOn,
-		Name:               &name,
-	}
-	serviceParams := &service.CreateServiceParams{
-		Service: serviceCreate,
-		Context: context.Background(),
-	}
-	serviceParams.SetTimeout(30 * time.Second)
-
-	// make code that checks if there is already that service name and just use that
-	resp, err := client.Service.CreateService(serviceParams, nil)
-	if err != nil {
-		fmt.Println(err)
-		log.Fatal("Failed to create " + name + " service")
-	}
-	return *resp.GetPayload().Data
-}
-
-func OldcreateServicePolicy(client *rest_management_api_client.ZitiEdgeManagement, name string, servType rest_model.DialBind, identityRoles rest_model.Roles, serviceRoles rest_model.Roles) rest_model.CreateLocation {
-
-	// var resp *service_policy.CreateServicePolicyCreated
-
-	defaultSemantic := rest_model.SemanticAllOf
-	servicePolicy := &rest_model.ServicePolicyCreate{
-		IdentityRoles: identityRoles,
-		Name:          &name,
-		Semantic:      &defaultSemantic,
-		//ServiceRoles:  serviceRoles,
-		Type: &servType,
-	}
-	params := &service_policy.CreateServicePolicyParams{
-		Policy:  servicePolicy,
-		Context: context.Background(),
-	}
-	fmt.Println("service policy is: ", servicePolicy)
-	params.SetTimeout(30 * time.Second)
-
-	// if len(name) > 0 {
-	// 	fmt.Println("sps craeting:", name)
-	// 	return *resp.GetPayload().Data
-
-	// }
-	// if name == "" {
-
-	// }
-	resp, err := client.ServicePolicy.CreateServicePolicy(params, nil)
-	// a := fmt.Sprintf("*resp.GetPayload().Data je %T", resp.GetPayload().Data)
-	// fmt.Println(a)
-	if err == nil { // if err == nil {
-		fmt.Println(err)
-		return *resp.GetPayload().Data
-		// TODO error, name must be unique!!!
-		//log.Fatal("Failed to create the " + name + " service policy")
-	}
-
-	return rest_model.CreateLocation{}
-}
-
-func deleteServicePolicyByID(client *rest_management_api_client.ZitiEdgeManagement, id string) *service_policy.DeleteServicePolicyOK {
-	deleteParams := &service_policy.DeleteServicePolicyParams{
-		ID: id,
-	}
-	deleteParams.SetTimeout(30 * time.Second)
-	resp, err := client.ServicePolicy.DeleteServicePolicy(deleteParams, nil)
-	if err != nil {
-		fmt.Println(err)
-	}
-
-	return resp
-}
-
-func getIdentityByName(client *rest_management_api_client.ZitiEdgeManagement, name string) *rest_model.IdentityDetail {
-	filter := "name=\"" + name + "\""
-	params := &identity.ListIdentitiesParams{
-		Filter:  &filter,
-		Context: context.Background(),
-	}
-	params.SetTimeout(30 * time.Second)
-	resp, err := client.Identity.ListIdentities(params, nil)
-	if err != nil {
-		log.Fatalf("Could not obtain an ID for the identity named %s", name)
-		fmt.Println(err)
-	}
-
-	return resp.GetPayload().Data[0]
-}
-
-func getServiceByName(client *rest_management_api_client.ZitiEdgeManagement, name string) *rest_model.ServiceDetail {
-	filter := "name=\"" + name + "\""
-	params := &service.ListServicesParams{
-		Filter:  &filter,
-		Context: context.Background(),
-	}
-	params.SetTimeout(30 * time.Second)
-	resp, err := client.Service.ListServices(params, nil)
-	if err != nil {
-		log.Fatalf("Could not obtain an ID for the service named %s", name)
-		fmt.Println(err)
-	}
-	return resp.GetPayload().Data[0]
-}
-
-func OldenrollIdentity(client *rest_management_api_client.ZitiEdgeManagement, identityID string) *ziti.Config {
-	// Get the identity object
-	params := &identity.DetailIdentityParams{
-		Context: context.Background(),
-		ID:      identityID,
-	}
-	params.SetTimeout(30 * time.Second)
-	resp, err := client.Identity.DetailIdentity(params, nil)
-
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// Enroll the identity
-	tkn, _, err := enroll.ParseToken(resp.GetPayload().Data.Enrollment.Ott.JWT)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	flags := enroll.EnrollmentFlags{
-		Token:  tkn,
-		KeyAlg: "RSA",
-	}
-	conf, err := enroll.Enroll(flags)
-
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	return conf
-}
-
-func deleteIdentityByID(client *rest_management_api_client.ZitiEdgeManagement, id string) *identity.DeleteIdentityOK {
-	deleteParams := &identity.DeleteIdentityParams{
-		ID: id,
-	}
-	deleteParams.SetTimeout(30 * time.Second)
-	resp, err := client.Identity.DeleteIdentity(deleteParams, nil)
-	if err != nil {
-		fmt.Println(err)
-	}
-	return resp
-}
-
-//=====================================
-// ziti edge delete identity reflect-server
-
-// ziti edge delete identity reflect-client
-// ziti edge delete serivce-policy reflect-client-bind
-// ziti edge delete serivce-policy reflect-client-dial
-// ziti edge delete service reflectService
-
-// ziti edge create service reflectService --role-attributes reflect-service
-// ziti edge create identity device reflect-client -a reflect.clients -o reflect-client.jwt
-// ziti edge create identity device reflect-server -a reflect.servers -o reflect-server.jwt
-// ziti edge enroll --jwt reflect-client.jwt
-// ziti edge enroll --jwt reflect-server.jwt
-// ziti edge create service-policy reflect-client-dial Dial --identity-roles '#reflect.clients' --service-roles '#reflect-service'
-// ziti edge create service-policy reflect-client-bind Bind --identity-roles '#reflect.servers' --service-roles '#reflect-service'
-// ======================================
 
 func findIdentity(identityName string) string {
 	searchParam := identity.NewListIdentitiesParams()
@@ -653,57 +459,3 @@ func createServicePolicy(name string, servType rest_model.DialBind, identityRole
 
 	return *resp.GetPayload().Data
 }
-
-// func createIdentityOIDC(name string, email string,
-// 	identType rest_model.IdentityType, isAdmin bool) *identity.CreateIdentityCreated {
-// 	authPolicyId := os.Getenv("OPENZITI_AUTH_POLICY_ID")
-// 	attrs := &rest_model.Attributes{"docker.whale.dialers"}
-
-// 	i := &rest_model.IdentityCreate{
-// 		AuthPolicyID:              &authPolicyId,
-// 		ExternalID:                &email,
-// 		IsAdmin:                   &isAdmin,
-// 		Name:                      &name,
-// 		RoleAttributes:            attrs,
-// 		ServiceHostingCosts:       nil,
-// 		ServiceHostingPrecedences: nil,
-// 		Tags:                      nil,
-// 		Type:                      &identType,
-// 	}
-// 	p := identity.NewCreateIdentityParams()
-// 	p.Identity = i
-// 	p.Context = context.Background()
-
-// 	searchParam := identity.NewListIdentitiesParams()
-// 	filter := "name contains \"" + email + "\""
-// 	searchParam.Filter = &filter
-// 	id, err := client.Identity.ListIdentities(searchParam, nil)
-// 	if err != nil {
-// 		fmt.Println(err)
-// 	}
-
-// 	if id != nil && len(id.Payload.Data) > 0 {
-// 		delParam := identity.NewDeleteIdentityParams()
-// 		delParam.ID = *id.Payload.Data[0].ID
-// 		_, err := client.Identity.DeleteIdentity(delParam, nil)
-// 		if err != nil {
-// 			fmt.Println(err)
-// 		}
-// 	}
-// 	ident, err := client.Identity.CreateIdentity(p, nil)
-// 	if err != nil {
-// 		fmt.Println(err)
-// 	}
-// 	fmt.Println("ident payload is : ", ident.Payload)
-// 	fmt.Println("ident payload data ID is : ", ident.Payload.Data.ID)
-// 	time.Sleep(1 * time.Second)
-// 	params := &identity.DetailIdentityParams{
-// 		Context: context.Background(),
-// 		ID:      ident.Payload.Data.ID,
-// 	}
-// 	params.SetTimeout(30 * time.Second)
-// 	resp, _ := client.Identity.DetailIdentity(params, nil)
-// 	fmt.Println(resp.GetPayload().Data.Enrollment.Ott.JWT)
-
-// 	return ident
-// }
