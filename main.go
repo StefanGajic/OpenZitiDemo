@@ -5,9 +5,11 @@ import (
 	"crypto/x509"
 	"fmt"
 	"html/template"
+	"io"
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"time"
@@ -88,6 +90,14 @@ var jwtToken string
 
 func serveHTTP(listener net.Listener) {
 
+	baseURL := createMathUrl(18000, "http", "localhost")
+	mathUrl := addMathParams(baseURL, os.Args[1], os.Args[2], os.Args[3])
+	if len(os.Args) > 4 && os.Args[4] == "showcurl" {
+		fmt.Println("This is the equivalent curl echo'ed from bash:")
+		fmt.Printf("\n  echo Response: $(curl -sk '%s')\n\n", mathUrl)
+	}
+	go callTheApi(mathUrl)
+
 	svr := &http.Server{}
 	mux := http.NewServeMux()
 	mux.Handle("/add-me-to-openziti", http.HandlerFunc(addToOpenZiti))
@@ -104,6 +114,35 @@ func serveHTTP(listener net.Listener) {
 
 	}
 
+}
+
+func createMathUrl(port int16, scheme, host string) string {
+	return fmt.Sprintf("%s://%s:%d/domath", scheme, host, port)
+}
+
+func addMathParams(baseURL, input1, operator, input2 string) string {
+	params := url.Values{}
+	params.Set("input1", input1)
+	params.Set("operator", operator)
+	params.Set("input2", input2)
+
+	return fmt.Sprintf("%s?%s", baseURL, params.Encode())
+}
+
+func callTheApi(mathURL string) {
+	req, err := http.NewRequest("GET", mathURL, nil)
+	if err != nil {
+		log.Fatalf("unable to create request: %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		log.Fatalf("Error making the request: %v", err)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Fatalf("Error reading the response: %v", err)
+	}
+	fmt.Println("Response:", string(body))
 }
 
 func hello(w http.ResponseWriter, r *http.Request) {
@@ -152,7 +191,6 @@ func serveIndexHTML(w http.ResponseWriter, r *http.Request) {
 }
 
 func addToOpenZiti(w http.ResponseWriter, r *http.Request) {
-	var attribute string
 
 	r.ParseForm()
 
@@ -163,13 +201,8 @@ func addToOpenZiti(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// (client *rest_management_api_client.ZitiEdgeManagement, name string, identType rest_model.IdentityType)
-
-	// (identType rest_model.IdentityType, identityName string, attributes string)
-	// createdIdentity := createIdentity(client, email, rest_model.IdentityTypeUser)
-	// TODO fix this so it uses createIdentity
-	//createdIdentity := createRecreateIdentity(client, email, rest_model.IdentityTypeUser, false)
-	createdIdentity := createIdentity(rest_model.IdentityTypeUser, email, attribute)
+	deleteIdentity(email)
+	createdIdentity := createIdentity(rest_model.IdentityTypeUser, email, "reflect.servers")
 	jwtToken = getJWTToken(client, createdIdentity.Payload.Data.ID)
 	fmt.Println("createdIdentity is: ", createdIdentity)
 
@@ -227,63 +260,6 @@ func getJWTToken(client *rest_management_api_client.ZitiEdgeManagement, identity
 		log.Fatal(err)
 	}
 	return resp.GetPayload().Data.Enrollment.Ott.JWT
-}
-
-func createRecreateIdentity(client *rest_management_api_client.ZitiEdgeManagement, name string,
-	identType rest_model.IdentityType, isAdmin bool) *identity.CreateIdentityCreated {
-	i := &rest_model.IdentityCreate{
-		Enrollment: &rest_model.IdentityCreateEnrollment{
-			Ott: true,
-		},
-		IsAdmin:                   &isAdmin,
-		Name:                      &name,
-		RoleAttributes:            &rest_model.Attributes{"reflect.clients"},
-		ServiceHostingCosts:       nil,
-		ServiceHostingPrecedences: nil,
-		Tags:                      nil,
-		Type:                      &identType,
-	}
-	p := identity.NewCreateIdentityParams()
-	p.Identity = i
-	p.Context = context.Background()
-	fmt.Println("p identity is this: ", p.Identity)
-
-	searchParam := identity.NewListIdentitiesParams()
-	fmt.Println("searchParam is this: ", searchParam)
-	filter := "name = \"" + name + "\""
-	fmt.Println("filter is this: ", filter)
-	searchParam.Filter = &filter
-	fmt.Println("searchParam novi is this: ", searchParam)
-	id, err := client.Identity.ListIdentities(searchParam, nil)
-	fmt.Println("id is this: ", id)
-	if err != nil {
-		fmt.Println(err)
-	}
-	if id != nil && len(id.Payload.Data) > 0 {
-		delParam := identity.NewDeleteIdentityParams()
-		delParam.ID = *id.Payload.Data[0].ID
-		_, err := client.Identity.DeleteIdentity(delParam, nil)
-		if err != nil {
-			fmt.Println(err)
-		}
-	}
-
-	// Create the identity
-	ident, err := client.Identity.CreateIdentity(p, nil)
-	if err != nil {
-		fmt.Println(err)
-		log.Fatal("Failed to create the identity")
-	}
-
-	fmt.Println("ident payload is : ", ident.Payload)
-	fmt.Println("ident payload data ID is : ", ident.Payload.Data.ID)
-	time.Sleep(1 * time.Second)
-	params := &identity.DetailIdentityParams{
-		Context: context.Background(),
-		ID:      ident.Payload.Data.ID,
-	}
-	params.SetTimeout(30 * time.Second)
-	return ident
 }
 
 func findIdentity(identityName string) string {
