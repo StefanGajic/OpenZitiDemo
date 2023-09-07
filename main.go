@@ -28,6 +28,8 @@ import (
 )
 
 var serverIdentity *ziti.Config
+var client *rest_management_api_client.ZitiEdgeManagement
+var jwtToken string
 
 func init() {
 
@@ -51,7 +53,6 @@ func init() {
 		log.Fatal(err)
 	}
 	client = c
-
 }
 
 func main() {
@@ -65,9 +66,7 @@ func main() {
 
 	createService("reflectService", "reflect-service")
 	createService("httpService", "reflect-service")
-	// createIdentity(rest_model.IdentityTypeDevice, "reflect-client", "reflect.clients")
 	createIdentity(rest_model.IdentityTypeDevice, "reflect-server", "reflect.servers")
-	// clientIdentity := enrollIdentity("reflect-client")
 	serverIdentity = enrollIdentity("reflect-server")
 
 	createServicePolicy("reflect-client-dial", rest_model.DialBindDial, rest_model.Roles{"#reflect.clients"}, rest_model.Roles{"#reflect-service"})
@@ -81,22 +80,20 @@ func main() {
 	go serveHTTP(underlayListener)
 	go serveHTTP(zitifiedListener)
 
-	time.Sleep(600 * time.Second)
-	// common.CreateServer()
-}
-
-var client *rest_management_api_client.ZitiEdgeManagement
-var jwtToken string
-
-func serveHTTP(listener net.Listener) {
-
 	baseURL := createMathUrl(18000, "http", "localhost")
 	mathUrl := addMathParams(baseURL, os.Args[1], os.Args[2], os.Args[3])
 	if len(os.Args) > 4 && os.Args[4] == "showcurl" {
 		fmt.Println("This is the equivalent curl echo'ed from bash:")
 		fmt.Printf("\n  echo Response: $(curl -sk '%s')\n\n", mathUrl)
 	}
+
 	go callTheApi(mathUrl)
+
+	time.Sleep(600 * time.Second)
+	// common.CreateServer()
+}
+
+func serveHTTP(listener net.Listener) {
 
 	svr := &http.Server{}
 	mux := http.NewServeMux()
@@ -111,9 +108,7 @@ func serveHTTP(listener net.Listener) {
 
 	if err := svr.Serve(listener); err != nil {
 		log.Fatal(err)
-
 	}
-
 }
 
 func createMathUrl(port int16, scheme, host string) string {
@@ -249,7 +244,7 @@ func downloadToken(w http.ResponseWriter, r *http.Request) {
 }
 
 func getJWTToken(client *rest_management_api_client.ZitiEdgeManagement, identityID string) string {
-	// Retrieve and return the JWT token for the given identity ID
+
 	params := &identity.DetailIdentityParams{
 		Context: context.Background(),
 		ID:      identityID,
@@ -283,7 +278,7 @@ func deleteIdentity(identityName string) {
 	if id == "" {
 		return
 	}
-	// logic to delete reflect-server
+
 	deleteParams := &identity.DeleteIdentityParams{
 		ID: id,
 	}
@@ -364,7 +359,6 @@ func createService(serviceName string, attribute string) rest_model.CreateLocati
 
 	encryptOn := true
 	serviceCreate := &rest_model.ServiceCreate{
-		//Configs:            serviceConfigs,
 		EncryptionRequired: &encryptOn,
 		Name:               &serviceName,
 		RoleAttributes:     rest_model.Roles{attribute},
