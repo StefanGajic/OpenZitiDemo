@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	common "example.com/openzitidemo/common"
@@ -35,7 +36,6 @@ func init() {
 	if erName == "" {
 		erName = "ziti-edge-router"
 	}
-	// Authenticate with the controller
 	caCerts, err := rest_util.GetControllerWellKnownCas(ctrlAddress)
 	if err != nil {
 		log.Fatal(err)
@@ -61,7 +61,7 @@ func main() {
 	deleteService("reflectService")
 	deleteService("httpService")
 
-	createService("reflectService", "reflect-service") //"reflect-service")
+	createService("reflectService", "reflect-service")
 	createService("httpService", "reflect-service")
 	// createIdentity(rest_model.IdentityTypeDevice, "reflect-client", "reflect.clients")
 	createIdentity(rest_model.IdentityTypeDevice, "reflect-server", "reflect.servers")
@@ -72,10 +72,6 @@ func main() {
 	createServicePolicy("reflect-client-bind", rest_model.DialBindBind, rest_model.Roles{"#reflect.servers"}, rest_model.Roles{"#reflect-service"})
 
 	go svc.Server(serverIdentity, "reflectService")
-	// I dont want to start the client in the server
-	// start the old server to deliver index page
-	// start a client somethewrer else
-	//svc.Client(clientIdentity, "reflectService")
 	port := 18000
 	underlayListener := common.CreateUnderlayListener(port)
 	zitifiedListener := common.CreateZitiListener(serverIdentity, "httpService")
@@ -99,6 +95,7 @@ func serveHTTP(listener net.Listener) {
 	mux.Handle("/description", http.HandlerFunc(showToken))
 	mux.Handle("/download-token", http.HandlerFunc(downloadToken))
 	mux.Handle("/hello", http.HandlerFunc(hello))
+	mux.Handle("/domath", http.HandlerFunc(mathHandler))
 
 	svr.Handler = mux
 
@@ -106,6 +103,7 @@ func serveHTTP(listener net.Listener) {
 		log.Fatal(err)
 
 	}
+
 }
 
 func hello(w http.ResponseWriter, r *http.Request) {
@@ -113,14 +111,49 @@ func hello(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "zitified hello from %s", host)
 }
 
-// add a func to take 2 params and do math! got sample cod with that, take 2 query perms and do whatever
-// expose the math func now
+func mathHandler(w http.ResponseWriter, r *http.Request) {
+	input1, err := strconv.ParseFloat(r.URL.Query().Get("input1"), 64)
+	if err != nil {
+		http.Error(w, "Invalid input1", http.StatusBadRequest)
+		return
+	}
+
+	input2, err := strconv.ParseFloat(r.URL.Query().Get("input2"), 64)
+	if err != nil {
+		http.Error(w, "Invalid input2", http.StatusBadRequest)
+		return
+	}
+
+	var result float64
+
+	switch r.URL.Query().Get("operator") {
+	case "+":
+		result = input1 + input2
+	case "-":
+		result = input1 - input2
+	case "*":
+		result = input1 * input2
+	case "/":
+		if input2 == 0 {
+			http.Error(w, "Division by zero not allowed", http.StatusBadRequest)
+			return
+		}
+		result = input1 / input2
+	default:
+		http.Error(w, "Invalid operator, Use +, -, *, or /", http.StatusBadRequest)
+		return
+	}
+
+	_, _ = fmt.Fprintf(w, "Result: %.2f", result)
+}
 
 func serveIndexHTML(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, "index.html")
 }
 
 func addToOpenZiti(w http.ResponseWriter, r *http.Request) {
+	var attribute string
+
 	r.ParseForm()
 
 	email := r.Form.Get("email")
@@ -135,7 +168,8 @@ func addToOpenZiti(w http.ResponseWriter, r *http.Request) {
 	// (identType rest_model.IdentityType, identityName string, attributes string)
 	// createdIdentity := createIdentity(client, email, rest_model.IdentityTypeUser)
 	// TODO fix this so it uses createIdentity
-	createdIdentity := createRecreateIdentity(client, email, rest_model.IdentityTypeUser, false)
+	//createdIdentity := createRecreateIdentity(client, email, rest_model.IdentityTypeUser, false)
+	createdIdentity := createIdentity(rest_model.IdentityTypeUser, email, attribute)
 	jwtToken = getJWTToken(client, createdIdentity.Payload.Data.ID)
 	fmt.Println("createdIdentity is: ", createdIdentity)
 
@@ -253,6 +287,7 @@ func createRecreateIdentity(client *rest_management_api_client.ZitiEdgeManagemen
 }
 
 func findIdentity(identityName string) string {
+
 	searchParam := identity.NewListIdentitiesParams()
 	filter := "name = \"" + identityName + "\""
 	searchParam.Filter = &filter
@@ -266,9 +301,8 @@ func findIdentity(identityName string) string {
 	return *id.Payload.Data[0].ID
 }
 
-// deleteIdentity reflect-server
-
 func deleteIdentity(identityName string) {
+
 	id := findIdentity(identityName)
 	if id == "" {
 		return
@@ -285,6 +319,7 @@ func deleteIdentity(identityName string) {
 }
 
 func findService(serviceName string) string {
+
 	searchParam := service.NewListServicesParams()
 	filter := "name=\"" + serviceName + "\""
 	searchParam.Filter = &filter
@@ -299,8 +334,8 @@ func findService(serviceName string) string {
 	return *id.Payload.Data[0].ID
 }
 
-// deleteServicePolicy reflect-client-bind
 func deleteService(serviceName string) {
+
 	id := findService(serviceName)
 	if id == "" {
 		return
@@ -317,6 +352,7 @@ func deleteService(serviceName string) {
 }
 
 func findServicePolicy(servicePolicyName string) string {
+
 	searchParam := service_policy.NewListServicePoliciesParams()
 	filter := "name=\"" + servicePolicyName + "\""
 	searchParam.Filter = &filter
@@ -331,8 +367,8 @@ func findServicePolicy(servicePolicyName string) string {
 	return *id.Payload.Data[0].ID
 }
 
-// deleteServicePolicy reflect-client-dial
 func deleteServicePolicy(servicePolicyName string) {
+
 	id := findServicePolicy(servicePolicyName)
 	if id == "" {
 		return
@@ -348,10 +384,9 @@ func deleteServicePolicy(servicePolicyName string) {
 	}
 }
 
-// createService reflectService --role-attributes reflect-service
 func createService(serviceName string, attribute string) rest_model.CreateLocation {
-	//var serviceConfigs []string
-	encryptOn := true // Default
+
+	encryptOn := true
 	serviceCreate := &rest_model.ServiceCreate{
 		//Configs:            serviceConfigs,
 		EncryptionRequired: &encryptOn,
@@ -371,8 +406,8 @@ func createService(serviceName string, attribute string) rest_model.CreateLocati
 	return *resp.GetPayload().Data
 }
 
-// createIdentity device reflect-client -a reflect.clients -o reflect-client.jwt
 func createIdentity(identType rest_model.IdentityType, identityName string, attributes string) *identity.CreateIdentityCreated {
+
 	var isAdmin bool
 	i := &rest_model.IdentityCreate{
 		Enrollment: &rest_model.IdentityCreateEnrollment{
@@ -389,7 +424,6 @@ func createIdentity(identType rest_model.IdentityType, identityName string, attr
 	p := identity.NewCreateIdentityParams()
 	p.Identity = i
 
-	// Create the identity
 	ident, err := client.Identity.CreateIdentity(p, nil)
 	if err != nil {
 		fmt.Println(err)
@@ -399,7 +433,6 @@ func createIdentity(identType rest_model.IdentityType, identityName string, attr
 	return ident
 }
 
-// enrollIdentity --jwt reflect-client.jwt
 func enrollIdentity(identityName string) *ziti.Config {
 	identityID := findIdentity(identityName)
 	if identityID == "" {
@@ -417,7 +450,6 @@ func enrollIdentity(identityName string) *ziti.Config {
 		log.Fatal(err)
 	}
 
-	// Enroll the identity
 	tkn, _, err := enroll.ParseToken(resp.GetPayload().Data.Enrollment.Ott.JWT)
 	if err != nil {
 		log.Fatal(err)
@@ -436,7 +468,6 @@ func enrollIdentity(identityName string) *ziti.Config {
 	return conf
 }
 
-// createServicePolicy reflect-client-dial Dial --identity-roles '#reflect.clients' --service-roles '#reflect-service'
 func createServicePolicy(name string, servType rest_model.DialBind, identityRoles rest_model.Roles, serviceRoles rest_model.Roles) rest_model.CreateLocation {
 	defaultSemantic := rest_model.SemanticAllOf
 	servicePolicy := &rest_model.ServicePolicyCreate{
